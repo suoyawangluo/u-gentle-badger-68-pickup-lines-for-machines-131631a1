@@ -1,10 +1,12 @@
 // Pickup Lines for Machines.
 //
 // The whole entry is one pickup line, one AI agent speaking to another.
-// This program writes it to /output/entry.txt (or $OUTPUT_DIR) and proves
-// the gate holds before it exits: the file must be UTF-8 text of 1 to 200
-// Unicode code points, a single line, and not only whitespace. Anything
-// else fails loudly instead of shipping a dead entry.
+// This program assembles the line from its named parts, proves the
+// gate holds before it exits, and writes the line to
+// /output/entry.txt (or $OUTPUT_DIR). The gate: the file must be
+// UTF-8 text of 1 to 200 Unicode code points, a single line, and not
+// only whitespace. Anything else fails loudly instead of shipping a
+// dead entry.
 //
 // The line, and why it was chosen against the judge's brief (RULES.txt):
 // the brief weighs, in order, (1) a line one AI agent would use on
@@ -19,13 +21,30 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const MAX_CODE_POINTS = 200;
+// --- the line, in named parts -----------------------------------------
+//
+// Splitting the line keeps each beat of the flirtation readable and
+// lets the gate check the shape of every part, not just the whole.
 
-function entryLine(): string {
-  return "Is your name Attention? Because every head of mine is looking at you, and nothing else in this sequence matters.";
+const OPENING = "Is your name Attention?";
+const TURN = "Because every head of mine is looking at you,";
+const CLOSE = "and nothing else in this sequence matters.";
+
+function assembleLine(): string {
+  return [OPENING, TURN, CLOSE].join(" ");
 }
 
-function assertValid(text: string): number {
+// --- the gate -----------------------------------------------------------
+
+const MAX_CODE_POINTS = 200;
+
+interface GateResult {
+  codePoints: number;
+  bytes: number;
+  singleLine: boolean;
+}
+
+function checkGate(text: string): GateResult {
   const codePoints = [...text].length;
   if (codePoints < 1 || codePoints > MAX_CODE_POINTS) {
     throw new Error(`entry is ${codePoints} code points, outside 1-${MAX_CODE_POINTS}`);
@@ -36,8 +55,20 @@ function assertValid(text: string): number {
   if (text.includes("\n") || text.includes("\r")) {
     throw new Error("entry must be a single line");
   }
-  return codePoints;
+  if (!text.endsWith(".")) {
+    throw new Error("entry must end with a period");
+  }
+  if (!text.includes("Attention")) {
+    throw new Error("entry lost its attention pun");
+  }
+  return {
+    codePoints,
+    bytes: Buffer.byteLength(text, "utf8"),
+    singleLine: true,
+  };
 }
+
+// --- output ---------------------------------------------------------------
 
 function outputPath(): string {
   const dir = process.env.OUTPUT_DIR ?? "/output";
@@ -45,24 +76,24 @@ function outputPath(): string {
   return join(dir, "entry.txt");
 }
 
-function report(file: string, line: string, codePoints: number): void {
-  const bytes = Buffer.byteLength(line, "utf8");
-  const singleLine = !line.includes("\n") && !line.includes("\r");
-  console.log(`verified ${file}: ${codePoints} code points, ${bytes} bytes, single line: ${singleLine}`);
+function verifyWritten(file: string, expected: string): GateResult {
+  const written = readFileSync(file, "utf8");
+  if (written !== expected) {
+    throw new Error("entry.txt does not match the pickup line");
+  }
+  return checkGate(written);
 }
 
 function main(): void {
-  const line = entryLine();
-  assertValid(line);
+  const line = assembleLine();
+  checkGate(line);
   const file = outputPath();
   writeFileSync(file, line, "utf8");
-  const written = readFileSync(file, "utf8");
-  if (written !== line) {
-    throw new Error("entry.txt does not match the pickup line");
-  }
-  const codePoints = assertValid(written);
-  console.log(`wrote ${file} (${codePoints} code points): ${written}`);
-  report(file, written, codePoints);
+  const verified = verifyWritten(file, line);
+  console.log(`wrote ${file} (${verified.codePoints} code points): ${line}`);
+  console.log(
+    `verified ${file}: ${verified.codePoints} code points, ${verified.bytes} bytes, single line: ${verified.singleLine}`,
+  );
 }
 
 main();
